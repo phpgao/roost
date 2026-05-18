@@ -1,0 +1,206 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    # 错误处理
+    - errorlint
+    - nilerr
+    # 资源安全
+    - bodyclose
+    - noctx
+    - contextcheck
+    # 代码质量
+    - gocritic
+    - copyloopvar
+    - wastedassign
+    - goconst
+    # 复杂度
+    - gocyclo
+    - nestif
+    # 安全
+    - gosec
+    # 规范约束
+    - forbidigo
+    - mnd
+    - varnamelen
+    - usestdlibvars
+
+  exclusions:
+    presets:
+      - common-false-positives
+    paths:
+      - vendor
+    rules:
+      # 测试文件放宽规则
+      - path: _test\.go$
+        linters:
+          - errcheck
+          - noctx
+          - mnd
+          - gocyclo
+          - goconst
+          - varnamelen
+          - forbidigo
+      # mock 文件放宽
+      - path: _(?:mock|fake)\.go$
+        linters:
+          - unused
+          - varnamelen
+          - goconst
+      # main.go 需要 fmt 输出（CLI 模式）
+      - path: main\.go$
+        linters:
+          - forbidigo
+      # scanner 文件中 nilerr 是预期行为（跳过无法访问的路径）
+      - path: scanner_codex\.go$
+        linters:
+          - nilerr
+      # staticcheck SA9003: empty branch — 有时是占位注释，允许
+      - linters:
+          - staticcheck
+        text: "SA9003:"
+
+  settings:
+    govet:
+      enable:
+        - shadow
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+    gocyclo:
+      min-complexity: 35
+    nestif:
+      min-complexity: 10
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+        - ifElseChain
+        - unnamedResult
+    mnd:
+      ignored-numbers:
+        - 0
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 10
+        - 12
+        - 15
+        - 20
+        - 24
+        - 30
+        - 32
+        - 50
+        - 64
+        - 100
+        - 200
+        - 500
+        - 1000
+        - 5000
+        - 10000
+        - 493   # 0o755 decimal
+        - 420   # 0o644 decimal
+        - 80
+        - 1024
+        - 16
+      ignored-files:
+        - _test\.go$
+        - config\.go$
+    varnamelen:
+      min-name-length: 1
+      ignore-names:
+        - i
+        - j
+        - k
+        - v
+        - x
+        - y
+        - z
+        - t
+        - b
+        - a
+        - m
+        - ok
+        - err
+        - fn
+        - ctx
+        - req
+        - tx
+        - c
+        - db
+        - r
+        - p
+        - g
+        - id
+        - rw
+        - w
+        - sy
+        - em
+        - op
+        - q
+        - u
+      ignore-decls:
+        - c \*gin.Context
+        - db \*gorm.DB
+    goconst:
+      min-len: 3
+      min-occurrences: 4
+      ignored-strings:
+        - "^esc$"
+        - "^ctrl\\+c$"
+        - "^enter$"
+        - "^user$"
+        - "^assistant$"
+        - "^\\(untitled\\)$"
+        - "^--resume$"
+    gosec:
+      excludes:
+        - G107  # G301: directory permissions (0o755 is correct for config dir)
+        - G109
+        - G115
+        - G204
+        - G108
+        - G112
+        - G301  # Expect directory permissions to be 0750 or less
+        - G306  # Expect file permissions to be 0600 or less
+      severity: medium
+      confidence: medium
+    forbidigo:
+      analyze-types: false
+      forbid:
+        - pattern: ^fmt\.Print.*$
+          msg: "使用 fmt.Println 会破坏 TUI，请使用 tlog 或去掉"
+        - pattern: ^time\.Sleep$
+          msg: "使用 time.Sleep 会阻塞，请用 time.After 或 channel"
+        - pattern: ^regexp\.Compile$
+          msg: "使用 regexp.MustCompile 替代 regexp.Compile"
+        - pattern: ^log\.(Print|Fatal|Panic)
+          msg: "使用 tlog 替代标准库 log"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+    - gci
+
+  settings:
+    gci:
+      local-prefixes: github.com/phpgao/roost
+
+run:
+  timeout: 5m
+  skip-dirs:
+    - vendor
+
+issues:
+  exclude-cases:
+    - linter: staticcheck
+      text: "SA9003:"  # empty branch

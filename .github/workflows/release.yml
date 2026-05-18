@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build all platforms
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          GIT_COMMIT=$(git rev-parse --short HEAD)
+          LDFLAGS="-X 'github.com/phpgao/roost/Version=${VERSION}' -X 'github.com/phpgao/roost/BuildTime=${BUILD_TIME}' -X 'github.com/phpgao/roost/GitCommit=${GIT_COMMIT}'"
+
+          mkdir -p dist
+
+          # Linux
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -trimpath -o dist/roost-linux-amd64 .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "${LDFLAGS}" -trimpath -o dist/roost-linux-arm64 .
+
+          # macOS
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "${LDFLAGS}" -trimpath -o dist/roost-darwin-amd64 .
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "${LDFLAGS}" -trimpath -o dist/roost-darwin-arm64 .
+
+          # Windows
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -trimpath -o dist/roost-windows-amd64.exe .
+          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags "${LDFLAGS}" -trimpath -o dist/roost-windows-arm64.exe .
+
+      - name: Package archives
+        run: |
+          cd dist
+
+          # tar.gz for linux and darwin
+          for bin in roost-linux-amd64 roost-linux-arm64 roost-darwin-amd64 roost-darwin-arm64; do
+            cp ../README.md . 2>/dev/null || true
+            tar czf ${bin}.tar.gz ${bin} README.md
+            rm -f README.md
+          done
+
+          # zip for windows
+          for bin in roost-windows-amd64.exe roost-windows-arm64.exe; do
+            name=${bin%.exe}
+            cp ../README.md . 2>/dev/null || true
+            zip ${name}.zip ${bin} README.md
+            rm -f README.md
+          done
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum *.tar.gz *.zip > checksums.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt

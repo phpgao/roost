@@ -1,0 +1,34 @@
+# roost example configuration
+# Copy to ~/.roost/roost.yaml and edit
+
+# resume mode:
+#   replace - process replacement, returns to shell after agent exits (default)
+#   suspend - subprocess mode, returns to roost TUI after agent exits
+resume_mode: replace
+
+platforms:
+
+  claude:
+    bin: claude
+    data_dir: .claude
+    # args: [--dangerously-skip-permissions]
+
+  gemini:
+    bin: gemini
+    data_dir: .gemini
+    # args: [-y]
+
+  codex:
+    bin: codex
+    data_dir: .codex
+    # args: [--full-auto]
+
+  copilot:
+    bin: copilot
+    data_dir: .copilot
+    args: []
+
+  opencode:
+    bin: opencode
+    # data_dir is not needed, opencode uses SQLite database path
+    args: []
