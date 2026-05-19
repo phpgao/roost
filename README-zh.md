@@ -28,6 +28,16 @@ roost --resume <sid>   # 直接 resume
 roost --delete <sid>   # 直接删除
 ```
 
+## 截图
+
+**项目列表** — 一个视图查看所有平台的 AI 项目
+
+![项目列表](assets/screenshot-projects.png)
+
+**Session 列表** — 项目内的 session 列表，带模型和消息数量
+
+![Session列表](assets/screenshot-sessions.png)
+
 ## 快捷键
 
 | 按键 | 效果 |

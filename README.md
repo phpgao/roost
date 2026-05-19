@@ -28,6 +28,16 @@ roost --resume <sid>   # resume a session
 roost --delete <sid>   # delete a session
 ```
 
+## Screenshots
+
+**Project list** — all your projects across platforms in one view
+
+![Project list](assets/screenshot-projects.png)
+
+**Session list** — sessions inside a project, with model and message count
+
+![Session list](assets/screenshot-sessions.png)
+
 ## Keybindings
 
 | Key | Action |
