@@ -1,7 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -1049,4 +1052,152 @@ func TestHandleDeleteKey_Q(t *testing.T) {
 	if cmd == nil {
 		t.Error("q in delete confirm: should return tea.Quit")
 	}
+}
+
+// =====================================================================
+// main.go — cmdResume / cmdDelete / execResume / execNewSession
+// Sub-process testing pattern for os.Exit functions
+// =====================================================================
+
+func TestCmdResume_NotFound(t *testing.T) {
+	if os.Getenv("ROOST_TEST_CMDRESUME") == "1" {
+		cmdResume(nil, nil, Config{}, "nonexistent")
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestCmdResume_NotFound") //nolint:gosec // test binary path is safe // test binary path is safe
+	cmd.Env = append(os.Environ(), "ROOST_TEST_CMDRESUME=1")
+	err := cmd.Run()
+	var e *exec.ExitError
+	if errors.As(err, &e) && !e.Success() {
+		return // expected: non-zero exit
+	}
+	t.Fatalf("cmdResume with nonexistent session: expected non-zero exit, got %v", err)
+}
+
+func TestCmdDelete_NotFound(t *testing.T) {
+	if os.Getenv("ROOST_TEST_CMDDELETE") == "1" {
+		cmdDelete(nil, nil, "nonexistent")
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestCmdDelete_NotFound") //nolint:gosec // test binary path is safe // test binary path is safe
+	cmd.Env = append(os.Environ(), "ROOST_TEST_CMDDELETE=1")
+	err := cmd.Run()
+	var e *exec.ExitError
+	if errors.As(err, &e) && !e.Success() {
+		return // expected: non-zero exit
+	}
+	t.Fatalf("cmdDelete with nonexistent session: expected non-zero exit, got %v", err)
+}
+
+func TestCmdDelete_WithScanner(t *testing.T) {
+	now := time.Now()
+	projects := []Project{
+		{FullPath: "/p", Sessions: []Session{{ID: "s1", Platform: PlatformCodeBuddy, Title: "T", LastActive: now}}},
+	}
+	sc := &stubScanner{platform: PlatformCodeBuddy}
+	// This should not exit, just print to stderr
+	cmdDelete(projects, []Scanner{sc}, "s1")
+}
+
+func TestCmdDelete_NoMatchingScanner(t *testing.T) {
+	if os.Getenv("ROOST_TEST_CMDDELETE_NOSCANNER") == "1" {
+		now := time.Now()
+		projects := []Project{
+			{FullPath: "/p", Sessions: []Session{{ID: "s1", Platform: PlatformClaude, Title: "T", LastActive: now}}},
+		}
+		cmdDelete(projects, []Scanner{&stubScanner{platform: PlatformCodeBuddy}}, "s1") // no matching scanner for Claude
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestCmdDelete_NoMatchingScanner") //nolint:gosec // test binary path is safe // test binary path is safe
+	cmd.Env = append(os.Environ(), "ROOST_TEST_CMDDELETE_NOSCANNER=1")
+	err := cmd.Run()
+	var e *exec.ExitError
+	if errors.As(err, &e) && !e.Success() {
+		return // expected: non-zero exit
+	}
+	t.Fatalf("cmdDelete with no matching scanner: expected non-zero exit, got %v", err)
+}
+
+func TestExecResume_ChdirError(t *testing.T) {
+	if os.Getenv("ROOST_TEST_EXECRESUME_CHDIR") == "1" {
+		sess := &Session{ID: "s1", Platform: PlatformClaude, ProjectPath: "/nonexistent/path/that/does/not/exist"}
+		execResume(sess, nil, Config{})
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestExecResume_ChdirError") //nolint:gosec // test binary path is safe
+	cmd.Env = append(os.Environ(), "ROOST_TEST_EXECRESUME_CHDIR=1")
+	err := cmd.Run()
+	var e *exec.ExitError
+	if errors.As(err, &e) && !e.Success() {
+		return // expected: non-zero exit
+	}
+	t.Fatalf("execResume with bad chdir: expected non-zero exit, got %v", err)
+}
+
+func TestExecResume_NoScanner(t *testing.T) {
+	if os.Getenv("ROOST_TEST_EXECRESUME_NOSCANNER") == "1" {
+		sess := &Session{ID: "s1", Platform: PlatformClaude, ProjectPath: "/tmp"}
+		execResume(sess, nil, Config{})
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestExecResume_NoScanner") //nolint:gosec // test binary path is safe
+	cmd.Env = append(os.Environ(), "ROOST_TEST_EXECRESUME_NOSCANNER=1")
+	err := cmd.Run()
+	var e *exec.ExitError
+	if errors.As(err, &e) && !e.Success() {
+		return // expected: non-zero exit
+	}
+	t.Fatalf("execResume with no scanner: expected non-zero exit, got %v", err)
+}
+
+func TestExecNewSession_ChdirError(t *testing.T) {
+	if os.Getenv("ROOST_TEST_EXECNEW_CHDIR") == "1" {
+		execNewSession(PlatformClaude, "/nonexistent/path/that/does/not/exist", Config{})
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestExecNewSession_ChdirError") //nolint:gosec // test binary path is safe
+	cmd.Env = append(os.Environ(), "ROOST_TEST_EXECNEW_CHDIR=1")
+	err := cmd.Run()
+	var e *exec.ExitError
+	if errors.As(err, &e) && !e.Success() {
+		return // expected: non-zero exit
+	}
+	t.Fatalf("execNewSession with bad chdir: expected non-zero exit, got %v", err)
+}
+
+func TestExecResume_BinNotFound(t *testing.T) {
+	if os.Getenv("ROOST_TEST_EXECRESUME_NOBIN") == "1" {
+		sess := &Session{ID: "s1", Platform: PlatformClaude, ProjectPath: "/tmp"}
+		sc := &stubScanner{platform: PlatformClaude, resumeCmd: []string{"__nonexistent_binary_xyz__"}}
+		execResume(sess, []Scanner{sc}, Config{})
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestExecResume_BinNotFound") //nolint:gosec // test binary path is safe
+	cmd.Env = append(os.Environ(), "ROOST_TEST_EXECRESUME_NOBIN=1")
+	err := cmd.Run()
+	var e *exec.ExitError
+	if errors.As(err, &e) && !e.Success() {
+		return // expected: non-zero exit
+	}
+	t.Fatalf("execResume with missing binary: expected non-zero exit, got %v", err)
+}
+
+func TestExecNewSession_BinNotFound(t *testing.T) {
+	if os.Getenv("ROOST_TEST_EXECNEW_NOBIN") == "1" {
+		cfg := Config{
+			Platforms: PlatformConfigs{
+				Claude: PlatformConfig{Bin: "__nonexistent_binary_xyz__"},
+			},
+		}
+		execNewSession(PlatformClaude, "/tmp", cfg)
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestExecNewSession_BinNotFound") //nolint:gosec // test binary path is safe
+	cmd.Env = append(os.Environ(), "ROOST_TEST_EXECNEW_NOBIN=1")
+	err := cmd.Run()
+	var e *exec.ExitError
+	if errors.As(err, &e) && !e.Success() {
+		return // expected: non-zero exit
+	}
+	t.Fatalf("execNewSession with missing binary: expected non-zero exit, got %v", err)
 }

@@ -77,6 +77,10 @@ func main() {
 	if fm.resumeSession != nil {
 		execResume(fm.resumeSession, scanners, cfg)
 	}
+
+	if fm.newSessionPending && fm.selectedProject != nil {
+		execNewSession(fm.newAgentPlatform, fm.selectedProject.FullPath, cfg)
+	}
 }
 
 func runNonInteractive(scanners []Scanner, cfg Config, list bool, resumeID, deleteID string, jsonOutput bool) {
@@ -214,6 +218,33 @@ func execResume(sess *Session, scanners []Scanner, cfg Config) {
 
 	// 打印执行的命令（带平台颜色）
 	fmt.Fprintln(os.Stderr, RenderColoredCommand(sess.Platform, strings.Join(argv, " ")))
+
+	binPath, err := exec.LookPath(argv[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "command not found: %s\n", argv[0])
+		os.Exit(1)
+	}
+	if err := syscall.Exec(binPath, argv, os.Environ()); err != nil {
+		fmt.Fprintf(os.Stderr, "exec error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// execNewSession 启动新 session（不带 resume arg）
+func execNewSession(p Platform, projectPath string, cfg Config) {
+	if err := os.Chdir(projectPath); err != nil {
+		fmt.Fprintf(os.Stderr, "chdir error: %v\n", err)
+		os.Exit(1)
+	}
+
+	bin := cfg.BinFor(p)
+	argv := []string{bin}
+	extraArgs := cfg.ArgsFor(p)
+	if len(extraArgs) > 0 {
+		argv = append(argv, extraArgs...)
+	}
+
+	fmt.Fprintln(os.Stderr, RenderColoredCommand(p, strings.Join(argv, " ")))
 
 	binPath, err := exec.LookPath(argv[0])
 	if err != nil {

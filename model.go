@@ -89,6 +89,11 @@ type Model struct {
 
 	// 非 nil 时 main 执行 exec resume
 	resumeSession *Session
+
+	// 新建 session：agent 选择页光标 + 选中的 platform
+	newAgentCursor    int
+	newAgentPlatform  Platform
+	newSessionPending bool // true = 退出 TUI 后启动新 session
 }
 
 func newModel(scanners []Scanner) Model {
@@ -206,6 +211,8 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleSessionKey(msg)
 	case screenDeleteConfirm:
 		return m.handleDeleteKey(msg)
+	case screenNewAgent:
+		return m.handleNewAgentKey(msg)
 	}
 	return m, nil
 }
@@ -459,6 +466,11 @@ func (m *Model) handleSessionKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.delTarget = deleteTargetProject
 			m.screen = screenDeleteConfirm
 		}
+	case "n", "N":
+		if len(m.installedPlatforms) > 0 {
+			m.screen = screenNewAgent
+			m.newAgentCursor = 0
+		}
 	case "/":
 		m.searching = true
 	}
@@ -604,6 +616,8 @@ func (m *Model) View() tea.View {
 			s = renderSessionView(m)
 		case screenDeleteConfirm:
 			s = renderDeleteView(m)
+		case screenNewAgent:
+			s = renderNewAgentView(m)
 		}
 	}
 	v := tea.NewView(s)
@@ -648,6 +662,7 @@ func renderHelpView(m *Model) string {
 	row("d", "Delete session/project")
 	row("x", "Delete entire project (in session view)")
 	row("r", "Refresh (re-scan)")
+	row("n", "New session (select agent)")
 	// Build dynamic Tab description from installed platforms
 	tabDesc := "Cycle platform filter (All"
 	for _, p := range m.installedPlatforms {
@@ -783,4 +798,54 @@ func (m *Model) suspendResume(session *Session) tea.Cmd {
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return agentExitMsg{err: err}
 	})
+}
+
+// handleNewAgentKey 处理 agent 选择页的按键
+func (m *Model) handleNewAgentKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyEsc:
+		m.screen = screenSession
+	case "up", "k":
+		if m.newAgentCursor > 0 {
+			m.newAgentCursor--
+		}
+	case "down", "j":
+		if m.newAgentCursor < len(m.installedPlatforms)-1 {
+			m.newAgentCursor++
+		}
+	case "g":
+		m.newAgentCursor = 0
+	case "G":
+		if len(m.installedPlatforms) > 0 {
+			m.newAgentCursor = len(m.installedPlatforms) - 1
+		}
+	case keyEnter:
+		p := m.installedPlatforms[m.newAgentCursor]
+		cmd := m.launchNewSession(p)
+		return m, cmd
+	}
+	return m, nil
+}
+
+// launchNewSession 启动新 session（不 resume）
+func (m *Model) launchNewSession(p Platform) tea.Cmd {
+	bin := m.cfg.BinFor(p)
+	argv := []string{bin}
+	extraArgs := m.cfg.ArgsFor(p)
+	if len(extraArgs) > 0 {
+		argv = append(argv, extraArgs...)
+	}
+
+	if m.cfg.GetResumeMode() == ResumeModeSuspend {
+		cmd := exec.CommandContext(context.Background(), argv[0], argv[1:]...)
+		cmd.Dir = m.selectedProject.FullPath
+		return tea.ExecProcess(cmd, func(err error) tea.Msg {
+			return agentExitMsg{err: err}
+		})
+	}
+
+	// replace 模式：通知 main 退出后启动新 session
+	m.newAgentPlatform = p
+	m.newSessionPending = true
+	return tea.Quit
 }

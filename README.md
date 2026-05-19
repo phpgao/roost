@@ -35,6 +35,7 @@ roost --delete <sid>   # delete a session
 | `↑/k` `↓/j` | Move up / down |
 | `g` / `G` | First / last item |
 | `Enter` | Enter project / Resume session |
+| `n` | New session (select agent) |
 | `Esc` | Back / Exit selection / Double-tap to quit |
 | `/` | Search |
 | `d` | Delete current item |

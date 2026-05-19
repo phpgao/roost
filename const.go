@@ -85,6 +85,7 @@ const (
 	screenProject screen = iota
 	screenSession
 	screenDeleteConfirm
+	screenNewAgent
 )
 
 type deleteTarget int

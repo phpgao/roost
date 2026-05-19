@@ -161,9 +161,9 @@ func renderSessionView(m *Model) string {
 		if m.selecting {
 			sb.WriteString(renderFooter("Space toggle  D delete(%d)  Esc cancel"+styleSubtle.Render(scrollHint), len(m.selectedSet)))
 		} else {
-			sb.WriteString(renderFooter("[%s] %s %s %s %s"+styleSubtle.Render(scrollHint),
+			sb.WriteString(renderFooter("[%s] %s %s %s %s %s"+styleSubtle.Render(scrollHint),
 				m.platformFilterLabel(),
-				styleKey.Render("Enter"), styleKey.Render("↑↓"), styleKey.Render("Esc"), styleKey.Render("?"),
+				styleKey.Render("Enter"), styleKey.Render("n"), styleKey.Render("↑↓"), styleKey.Render("Esc"), styleKey.Render("?"),
 			))
 		}
 	}

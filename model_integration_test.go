@@ -764,3 +764,328 @@ func TestUpdate_CtrlC(t *testing.T) {
 		t.Error("ctrl+c should return tea.Quit cmd")
 	}
 }
+
+// =====================================================================
+// Update: n/N in session view → screenNewAgent
+// =====================================================================
+
+func TestUpdate_Session_N(t *testing.T) {
+	m := makeModelWithProjects()
+	m.screen = screenSession
+	m.selectedProject = &Project{
+		Name:     "user/roost",
+		FullPath: "/home/user/roost",
+		Sessions: []Session{
+			{ID: "s1", Platform: PlatformCodeBuddy, Title: "T"},
+		},
+	}
+	m.filteredSessions = m.selectedProject.Sessions
+
+	nm, _ := m.Update(tea.KeyPressMsg{Code: 'n'})
+	mm := nm.(*Model)
+	if mm.screen != screenNewAgent {
+		t.Errorf("after n: screen = %v, want screenNewAgent", mm.screen)
+	}
+	if mm.newAgentCursor != 0 {
+		t.Errorf("after n: newAgentCursor = %d, want 0", mm.newAgentCursor)
+	}
+}
+
+func TestUpdate_Session_N_up_down(t *testing.T) {
+	m := makeModelWithProjects()
+	m.screen = screenNewAgent
+	m.newAgentCursor = 1
+
+	// up → cursor 0
+	nm, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	mm := nm.(*Model)
+	if mm.newAgentCursor != 0 {
+		t.Errorf("up: cursor = %d, want 0", mm.newAgentCursor)
+	}
+
+	// down → cursor 1
+	nm2, _ := mm.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	mm2 := nm2.(*Model)
+	if mm2.newAgentCursor != 1 {
+		t.Errorf("down: cursor = %d, want 1", mm2.newAgentCursor)
+	}
+
+	// down at bottom → no wrap
+	last := len(mm2.installedPlatforms) - 1
+	mm2.newAgentCursor = last
+	nm3, _ := mm2.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	mm3 := nm3.(*Model)
+	if mm3.newAgentCursor != last {
+		t.Errorf("down at bottom: cursor = %d, want %d (no wrap)", mm3.newAgentCursor, last)
+	}
+}
+
+func TestUpdate_Session_N_Esc(t *testing.T) {
+	now := time.Now()
+	m := makeModelWithProjects()
+	m.screen = screenNewAgent
+	m.selectedProject = &Project{
+		Name:     "user/roost",
+		FullPath: "/home/user/roost",
+		Sessions: []Session{
+			{ID: "s1", Platform: PlatformCodeBuddy, Title: "T", LastActive: now},
+		},
+	}
+
+	nm, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	mm := nm.(*Model)
+	if mm.screen != screenSession {
+		t.Errorf("esc in newAgent: screen = %v, want screenSession", mm.screen)
+	}
+}
+
+func TestUpdate_Session_N_G(t *testing.T) {
+	m := makeModelWithProjects()
+	m.screen = screenNewAgent
+	m.newAgentCursor = 2
+
+	// g → cursor 0
+	nm, _ := m.Update(tea.KeyPressMsg{Code: 'g'})
+	mm := nm.(*Model)
+	if mm.newAgentCursor != 0 {
+		t.Errorf("g: cursor = %d, want 0", mm.newAgentCursor)
+	}
+
+	// G → cursor last
+	nm2, _ := mm.Update(tea.KeyPressMsg{Code: 'G'})
+	mm2 := nm2.(*Model)
+	want := len(mm2.installedPlatforms) - 1
+	if mm2.newAgentCursor != want {
+		t.Errorf("G: cursor = %d, want %d", mm2.newAgentCursor, want)
+	}
+}
+
+func TestUpdate_Session_N_Enter_replace(t *testing.T) {
+	m := makeModelWithProjects()
+	m.screen = screenNewAgent
+	m.newAgentCursor = 0 // PlatformCodeBuddy
+	m.selectedProject = &Project{
+		Name:     "user/roost",
+		FullPath: "/home/user/roost",
+		Sessions: []Session{
+			{ID: "s1", Platform: PlatformCodeBuddy, Title: "T"},
+		},
+	}
+	// default resume mode is replace
+
+	nm, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	mm := nm.(*Model)
+	if mm.newAgentPlatform != PlatformCodeBuddy {
+		t.Errorf("after enter: newAgentPlatform = %v, want PlatformCodeBuddy", mm.newAgentPlatform)
+	}
+	if !mm.newSessionPending {
+		t.Error("after enter (replace mode): newSessionPending should be true")
+	}
+	if cmd == nil {
+		t.Error("after enter (replace mode): should return tea.Quit cmd")
+	}
+}
+
+// =====================================================================
+// renderNewAgentView + launchNewSession
+// =====================================================================
+
+func TestRenderNewAgentView(t *testing.T) {
+	m := makeModelWithProjects()
+	m.width = 80
+	m.height = 24
+	m.screen = screenNewAgent
+	m.newAgentCursor = 0
+
+	s := renderNewAgentView(m)
+	if !strings.Contains(s, "select agent") {
+		t.Error("renderNewAgentView: should contain 'select agent'")
+	}
+	// Should show first platform name
+	if !strings.Contains(s, "CodeBuddy") {
+		t.Error("renderNewAgentView: should contain platform name")
+	}
+}
+
+func TestRenderNewAgentView_NoPlatforms(t *testing.T) {
+	m := newModel(nil)
+	m.width = 80
+	m.height = 24
+	m.screen = screenNewAgent
+
+	s := renderNewAgentView(&m)
+	if !strings.Contains(s, "no platforms") {
+		t.Error("renderNewAgentView with no platforms: should contain 'no platforms'")
+	}
+}
+
+func TestView_NewAgentScreen(t *testing.T) {
+	m := makeModelWithProjects()
+	m.width = 80
+	m.height = 24
+	m.screen = screenNewAgent
+	m.newAgentCursor = 0
+
+	v := m.View()
+	if !strings.Contains(v.Content, "select agent") {
+		t.Error("View with screenNewAgent: should contain 'select agent'")
+	}
+}
+
+func TestLaunchNewSession_SuspendMode(t *testing.T) {
+	m := makeModelWithProjects()
+	m.screen = screenNewAgent
+	m.newAgentCursor = 0
+	m.cfg = Config{ResumeMode: ResumeModeSuspend}
+	m.selectedProject = &Project{
+		Name:     "p",
+		FullPath: "/tmp",
+		Sessions: []Session{{ID: "s1", Title: "T"}},
+	}
+
+	// Use a platform with a real binary ("echo" is always available)
+	m.installedPlatforms[0] = PlatformCodeBuddy // ensure first is CodeBuddy
+	m.cfg.Platforms.CodeBuddy.Bin = "echo"
+
+	nm, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	mm := nm.(*Model)
+	if mm.newSessionPending {
+		t.Error("suspend mode: newSessionPending should be false")
+	}
+	if cmd == nil {
+		t.Error("suspend mode: should return non-nil cmd (tea.ExecProcess)")
+	}
+}
+
+func TestHandleNewAgentKey_UnknownKey(t *testing.T) {
+	m := makeModelWithProjects()
+	m.screen = screenNewAgent
+	m.newAgentCursor = 0
+
+	nm, _ := m.Update(tea.KeyPressMsg{Code: 'z'})
+	mm := nm.(*Model)
+	if mm.screen != screenNewAgent {
+		t.Errorf("unknown key in newAgent: screen = %v, want screenNewAgent", mm.screen)
+	}
+}
+
+func TestHandleNewAgentKey_UpAtZero(t *testing.T) {
+	m := makeModelWithProjects()
+	m.screen = screenNewAgent
+	m.newAgentCursor = 0
+
+	nm, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	mm := nm.(*Model)
+	if mm.newAgentCursor != 0 {
+		t.Errorf("up at 0: cursor = %d, want 0", mm.newAgentCursor)
+	}
+}
+
+func TestLaunchNewSession_ReplaceWithExtraArgs(t *testing.T) {
+	m := makeModelWithProjects()
+	m.screen = screenNewAgent
+	m.newAgentCursor = 0
+	m.selectedProject = &Project{
+		Name:     "p",
+		FullPath: "/tmp",
+		Sessions: []Session{{ID: "s1", Title: "T"}},
+	}
+	m.cfg = Config{
+		ResumeMode: ResumeModeReplace,
+		Platforms: PlatformConfigs{
+			CodeBuddy: PlatformConfig{
+				Bin:  "echo",
+				Args: []string{"--flag"},
+			},
+		},
+	}
+
+	nm, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	mm := nm.(*Model)
+	if !mm.newSessionPending {
+		t.Error("replace mode with args: newSessionPending should be true")
+	}
+	if cmd == nil {
+		t.Error("replace mode: should return tea.Quit cmd")
+	}
+}
+
+func TestSuspendResume_WithExtraArgs(t *testing.T) {
+	sc := &stubScanner{
+		platform:  PlatformClaude,
+		resumeCmd: []string{"echo", "test"},
+	}
+	m := makeModelWithProjects()
+	m.scanners = []Scanner{sc}
+	m.cfg = Config{
+		ResumeMode: ResumeModeSuspend,
+		Platforms: PlatformConfigs{
+			Claude: PlatformConfig{
+				Args: []string{"--flag"},
+			},
+		},
+	}
+
+	sess := &Session{ID: "s1", Platform: PlatformClaude, ProjectPath: "/tmp"}
+	cmd := m.suspendResume(sess)
+	if cmd == nil {
+		t.Error("suspendResume with extra args: should return non-nil cmd")
+	}
+}
+
+func TestConfig_BinFor_Default(t *testing.T) {
+	cfg := Config{}
+	// Test default branch for each platform
+	tests := []struct {
+		platform Platform
+		want     string
+	}{
+		{PlatformCodeBuddy, "codebuddy"},
+		{PlatformClaude, "claude"},
+		{PlatformGemini, "gemini"},
+		{PlatformCodex, "codex"},
+		{PlatformCopilot, "copilot"},
+		{PlatformOpenCode, "opencode"},
+	}
+	for _, tt := range tests {
+		got := cfg.BinFor(tt.platform)
+		if got != tt.want {
+			t.Errorf("BinFor(%v) = %q, want %q", tt.platform, got, tt.want)
+		}
+	}
+}
+
+func TestConfig_DataDirFor_Default(t *testing.T) {
+	cfg := Config{}
+	tests := []struct {
+		platform Platform
+		want     string
+	}{
+		{PlatformCodeBuddy, ".codebuddy"},
+		{PlatformClaude, ".claude"},
+		{PlatformGemini, ".gemini"},
+		{PlatformCodex, ".codex"},
+		{PlatformCopilot, ".copilot"},
+	}
+	for _, tt := range tests {
+		got := cfg.DataDirFor(tt.platform)
+		if got != tt.want {
+			t.Errorf("DataDirFor(%v) = %q, want %q", tt.platform, got, tt.want)
+		}
+	}
+}
+
+func TestRenderNewAgentView_Scroll(t *testing.T) {
+	// Test with many platforms to trigger scrolling
+	platforms := []Platform{PlatformCodeBuddy, PlatformClaude, PlatformGemini, PlatformCodex, PlatformCopilot, PlatformOpenCode}
+	m := makeModelWithProjects()
+	m.width = 80
+	m.height = 10 // small height to force scroll
+	m.screen = screenNewAgent
+	m.newAgentCursor = len(platforms) - 1
+
+	s := renderNewAgentView(m)
+	if !strings.Contains(s, "select agent") {
+		t.Error("renderNewAgentView scroll: should contain 'select agent'")
+	}
+}
