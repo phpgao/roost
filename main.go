@@ -9,24 +9,22 @@ import (
 	"syscall"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/phpgao/roost/internal/app"
+	"github.com/phpgao/roost/internal/config"
+	"github.com/phpgao/roost/internal/scanner"
+	"github.com/phpgao/roost/internal/types"
+	"github.com/phpgao/roost/internal/view"
 	"github.com/spf13/pflag"
 )
 
-// 版本信息，由 Makefile 的 LDFLAGS 注入
+// Version info, injected by Makefile LDFLAGS.
 var (
 	Version   = "v0.0.0"
 	BuildTime = "unknown"
 	GitCommit = "unknown"
 )
 
-// isCommandAvailable 检测命令是否可用（在 $PATH 中能找到）
-func isCommandAvailable(bin string) bool {
-	_, err := exec.LookPath(bin)
-	return err == nil
-}
-
 func main() {
-	// command-line flags
 	listFlag := pflag.BoolP("list", "l", false, "list all projects and sessions")
 	resumeFlag := pflag.StringP("resume", "r", "", "resume the specified session ID")
 	deleteFlag := pflag.StringP("delete", "d", "", "delete the specified session ID")
@@ -41,35 +39,18 @@ func main() {
 		return
 	}
 
-	cfg := LoadConfig()
+	cfg := config.LoadConfig()
+	scanners := buildScanners(cfg)
 
-	var scanners []Scanner
-
-	// newScannerFor maps each platform to its constructor; nil means not yet supported
-	newScannerFor := map[Platform]func(Config) Scanner{
-		PlatformCodeBuddy: func(c Config) Scanner { return NewCodeBuddyScanner(c) },
-		PlatformClaude:    func(c Config) Scanner { return NewClaudeScanner(c) },
-		PlatformGemini:    func(c Config) Scanner { return NewGeminiScanner(c) },
-		PlatformCodex:     func(c Config) Scanner { return NewCodexScanner(c) },
-		PlatformCopilot:   func(c Config) Scanner { return NewCopilotScanner(c) },
-		PlatformOpenCode:  func(c Config) Scanner { return NewOpenCodeScanner(c) },
-	}
-	for _, p := range []Platform{PlatformCodeBuddy, PlatformClaude, PlatformGemini, PlatformCodex, PlatformCopilot, PlatformOpenCode} {
-		if isCommandAvailable(cfg.BinFor(p)) {
-			scanners = append(scanners, newScannerFor[p](cfg))
-		}
-	}
-
-	// 非交互模式
+	// Non-interactive mode
 	if *listFlag || *resumeFlag != "" || *deleteFlag != "" {
 		runNonInteractive(scanners, cfg, *listFlag, *resumeFlag, *deleteFlag, *jsonFlag)
 		return
 	}
 
-	// 交互模式（TUI）
-	m := newModel(scanners)
-	m.cfg = cfg
-	p := tea.NewProgram(&m)
+	// Interactive TUI mode
+	a := app.NewApp(scanners, cfg)
+	p := tea.NewProgram(a)
 
 	finalModel, err := p.Run()
 	if err != nil {
@@ -77,22 +58,56 @@ func main() {
 		os.Exit(1)
 	}
 
-	fm, ok := finalModel.(*Model)
+	fm, ok := finalModel.(*app.App)
 	if !ok {
 		return
 	}
 
-	if fm.resumeSession != nil {
-		execResume(fm.resumeSession, scanners, cfg)
+	if sess := fm.ResumeSession(); sess != nil {
+		execResume(sess, scanners, cfg)
 	}
 
-	if fm.newSessionPending && fm.selectedProject != nil {
-		execNewSession(fm.newAgentPlatform, fm.selectedProject.FullPath, cfg)
+	if fm.LaunchPending() {
+		execNewSession(fm.LaunchPlatform(), fm.LaunchProjectPath(), cfg)
 	}
 }
 
-func runNonInteractive(scanners []Scanner, cfg Config, list bool, resumeID, deleteID string, jsonOutput bool) {
-	projects := ScanProjectsParallel(scanners)
+// buildScanners creates scanner instances for all platforms with available binaries.
+func buildScanners(cfg config.Config) []scanner.Scanner {
+	type platformCtor struct {
+		platform types.Platform
+		newScan  func(config.Config) scanner.Scanner
+	}
+
+	ctors := []platformCtor{
+		{types.PlatformCodeBuddy, func(c config.Config) scanner.Scanner { return scanner.NewCodeBuddyScanner(c) }},
+		{types.PlatformClaude, func(c config.Config) scanner.Scanner { return scanner.NewClaudeScanner(c) }},
+		{types.PlatformGemini, func(c config.Config) scanner.Scanner { return scanner.NewGeminiScanner(c) }},
+		{types.PlatformCodex, func(c config.Config) scanner.Scanner { return scanner.NewCodexScanner(c) }},
+		{types.PlatformCopilot, func(c config.Config) scanner.Scanner { return scanner.NewCopilotScanner(c) }},
+		{types.PlatformOpenCode, func(c config.Config) scanner.Scanner { return scanner.NewOpenCodeScanner(c) }},
+	}
+
+	var scanners []scanner.Scanner
+	for _, pc := range ctors {
+		if isCommandAvailable(cfg.BinFor(pc.platform)) {
+			scanners = append(scanners, pc.newScan(cfg))
+		}
+	}
+	return scanners
+}
+
+func isCommandAvailable(bin string) bool {
+	_, err := exec.LookPath(bin)
+	return err == nil
+}
+
+// ---------------------------------------------------------------------------
+// Non-interactive commands
+// ---------------------------------------------------------------------------
+
+func runNonInteractive(scanners []scanner.Scanner, cfg config.Config, list bool, resumeID, deleteID string, jsonOutput bool) {
+	projects := scanner.ScanProjectsParallel(scanners)
 
 	switch {
 	case list:
@@ -104,7 +119,6 @@ func runNonInteractive(scanners []Scanner, cfg Config, list bool, resumeID, dele
 	}
 }
 
-// jsonSession JSON 输出用的结构
 type jsonSession struct {
 	ID         string `json:"id"`
 	Platform   string `json:"platform"`
@@ -120,7 +134,7 @@ type jsonProject struct {
 	Sessions []jsonSession `json:"sessions"`
 }
 
-func cmdList(projects []Project, jsonOutput bool) {
+func cmdList(projects []types.Project, jsonOutput bool) {
 	if jsonOutput {
 		var out []jsonProject
 		for _, p := range projects {
@@ -143,22 +157,21 @@ func cmdList(projects []Project, jsonOutput bool) {
 		return
 	}
 
-	// 纯文本输出
 	for _, p := range projects {
 		fmt.Printf("%s (%d sessions)\n", p.FullPath, len(p.Sessions))
 		for _, s := range p.Sessions {
 			agent := ""
-			if s.AgentType != "" && s.AgentType != typeAgentCLI {
+			if s.AgentType != "" && s.AgentType != types.TypeAgentCLI {
 				agent = "[" + s.AgentType + "] "
 			}
 			fmt.Printf("  %-10s %s%-30s  %-18s  %-10s  %d msgs  id:%s\n",
 				s.Platform.Name(), agent, s.Title, s.Model,
-				relativeTime(s.LastActive), s.MsgCount, s.ID)
+				types.RelativeTime(s.LastActive), s.MsgCount, s.ID)
 		}
 	}
 }
 
-func cmdResume(projects []Project, scanners []Scanner, cfg Config, sessionID string) {
+func cmdResume(projects []types.Project, scanners []scanner.Scanner, cfg config.Config, sessionID string) {
 	sess := findSession(projects, sessionID)
 	if sess == nil {
 		fmt.Fprintf(os.Stderr, "session not found: %s\n", sessionID)
@@ -167,7 +180,7 @@ func cmdResume(projects []Project, scanners []Scanner, cfg Config, sessionID str
 	execResume(sess, scanners, cfg)
 }
 
-func cmdDelete(projects []Project, scanners []Scanner, sessionID string) {
+func cmdDelete(projects []types.Project, scanners []scanner.Scanner, sessionID string) {
 	sess := findSession(projects, sessionID)
 	if sess == nil {
 		fmt.Fprintf(os.Stderr, "session not found: %s\n", sessionID)
@@ -182,13 +195,11 @@ func cmdDelete(projects []Project, scanners []Scanner, sessionID string) {
 			return
 		}
 	}
-	// 未找到匹配的 scanner
 	fmt.Fprintf(os.Stderr, "no scanner found for platform %d\n", sess.Platform)
 	os.Exit(1)
 }
 
-// findSession 在全部项目中查找指定 ID 的 session。
-func findSession(projects []Project, id string) *Session {
+func findSession(projects []types.Project, id string) *types.Session {
 	for _, p := range projects {
 		for _, s := range p.Sessions {
 			if s.ID == id {
@@ -199,33 +210,36 @@ func findSession(projects []Project, id string) *Session {
 	return nil
 }
 
-func execResume(sess *Session, scanners []Scanner, cfg Config) {
+// ---------------------------------------------------------------------------
+// Exec helpers (replace mode)
+// ---------------------------------------------------------------------------
+
+func execResume(sess *types.Session, scanners []scanner.Scanner, cfg config.Config) {
 	if err := os.Chdir(sess.ProjectPath); err != nil {
 		fmt.Fprintf(os.Stderr, "chdir error: %v\n", err)
 		os.Exit(1)
 	}
 
-	var scanner Scanner
-	for _, sc := range scanners {
-		if sc.Platform() == sess.Platform {
-			scanner = sc
+	var sc scanner.Scanner
+	for _, s := range scanners {
+		if s.Platform() == sess.Platform {
+			sc = s
 			break
 		}
 	}
-	if scanner == nil {
+	if sc == nil {
 		fmt.Fprintf(os.Stderr, "no scanner for platform %d\n", sess.Platform)
 		os.Exit(1)
 	}
 
-	argv := scanner.ResumeCmd(*sess)
-	// 拼上配置中的额外参数
+	argv := sc.ResumeCmd(*sess)
 	extraArgs := cfg.ArgsFor(sess.Platform)
 	if len(extraArgs) > 0 {
 		argv = append(argv, extraArgs...)
 	}
 
-	// 打印执行的命令（带平台颜色）
-	fmt.Fprintln(os.Stderr, RenderColoredCommand(sess.Platform, strings.Join(argv, " ")))
+	styles := view.NewStyles(true)
+	fmt.Fprintln(os.Stderr, styles.RenderColoredCommand(sess.Platform, strings.Join(argv, " ")))
 
 	binPath, err := exec.LookPath(argv[0])
 	if err != nil {
@@ -238,8 +252,7 @@ func execResume(sess *Session, scanners []Scanner, cfg Config) {
 	}
 }
 
-// execNewSession 启动新 session（不带 resume arg）
-func execNewSession(p Platform, projectPath string, cfg Config) {
+func execNewSession(p types.Platform, projectPath string, cfg config.Config) {
 	if err := os.Chdir(projectPath); err != nil {
 		fmt.Fprintf(os.Stderr, "chdir error: %v\n", err)
 		os.Exit(1)
@@ -252,7 +265,8 @@ func execNewSession(p Platform, projectPath string, cfg Config) {
 		argv = append(argv, extraArgs...)
 	}
 
-	fmt.Fprintln(os.Stderr, RenderColoredCommand(p, strings.Join(argv, " ")))
+	styles := view.NewStyles(true)
+	fmt.Fprintln(os.Stderr, styles.RenderColoredCommand(p, strings.Join(argv, " ")))
 
 	binPath, err := exec.LookPath(argv[0])
 	if err != nil {
