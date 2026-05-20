@@ -48,19 +48,21 @@ jobs:
         run: |
           cd dist
 
-          # tar.gz for linux and darwin
+          # tar.gz for linux and darwin: rename binary to "roost" inside archive
           for bin in roost-linux-amd64 roost-linux-arm64 roost-darwin-amd64 roost-darwin-arm64; do
             cp ../README.md . 2>/dev/null || true
-            tar czf ${bin}.tar.gz ${bin} README.md
-            rm -f README.md
+            cp ${bin} roost
+            tar czf ${bin}.tar.gz roost README.md
+            rm -f roost README.md
           done
 
-          # zip for windows
+          # zip for windows: rename binary to "roost.exe" inside archive
           for bin in roost-windows-amd64.exe roost-windows-arm64.exe; do
             name=${bin%.exe}
             cp ../README.md . 2>/dev/null || true
-            zip ${name}.zip ${bin} README.md
-            rm -f README.md
+            cp ${bin} roost.exe
+            zip ${name}.zip roost.exe README.md
+            rm -f roost.exe README.md
           done
 
       - name: Generate checksums
