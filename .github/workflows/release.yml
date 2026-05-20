@@ -11,6 +11,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -20,12 +22,16 @@ jobs:
         with:
           go-version: 'stable'
 
+      - name: Get version
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+
       - name: Run tests
         run: go test ./...
 
       - name: Build all platforms
         run: |
-          VERSION=${GITHUB_REF_NAME}
+          VERSION=${{ steps.get_version.outputs.VERSION }}
           BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           GIT_COMMIT=$(git rev-parse --short HEAD)
           LDFLAGS="-X 'github.com/phpgao/roost/Version=${VERSION}' -X 'github.com/phpgao/roost/BuildTime=${BUILD_TIME}' -X 'github.com/phpgao/roost/GitCommit=${GIT_COMMIT}'"
@@ -78,3 +84,58 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/checksums.txt
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout homebrew-roost
+        uses: actions/checkout@v6
+        with:
+          repository: phpgao/homebrew-roost
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-roost
+
+      - name: Download checksums
+        run: |
+          gh release download ${{ needs.release.outputs.version }} --repo phpgao/roost --pattern checksums.txt --dir /tmp
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract checksums and update Formula
+        run: |
+          VERSION="${{ needs.release.outputs.version }}"
+          CHECKSUMS_FILE=/tmp/checksums.txt
+
+          DARWIN_AMD64_SHA=$(grep "roost-darwin-amd64.tar.gz" $CHECKSUMS_FILE | awk '{print $1}')
+          DARWIN_ARM64_SHA=$(grep "roost-darwin-arm64.tar.gz" $CHECKSUMS_FILE | awk '{print $1}')
+          LINUX_AMD64_SHA=$(grep "roost-linux-amd64.tar.gz" $CHECKSUMS_FILE | awk '{print $1}')
+          LINUX_ARM64_SHA=$(grep "roost-linux-arm64.tar.gz" $CHECKSUMS_FILE | awk '{print $1}')
+
+          FORMULA_FILE=homebrew-roost/Formula/roost.rb
+
+          # Update version (strip 'v' prefix)
+          V="${VERSION#v}"
+          sed -i 's@version ".*"@version "'"$V"'"@' "$FORMULA_FILE"
+
+          # Update sha256: match url line, then substitute on the NEXT line
+          [ -n "$DARWIN_ARM64_SHA" ] && sed -i '/roost-darwin-arm64\.tar\.gz/{n;s@sha256 ".*"@sha256 "'"$DARWIN_ARM64_SHA"'"@'}' "$FORMULA_FILE"
+          [ -n "$DARWIN_AMD64_SHA" ] && sed -i '/roost-darwin-amd64\.tar\.gz/{n;s@sha256 ".*"@sha256 "'"$DARWIN_AMD64_SHA"'"@'}' "$FORMULA_FILE"
+          [ -n "$LINUX_ARM64_SHA" ] && sed -i '/roost-linux-arm64\.tar\.gz/{n;s@sha256 ".*"@sha256 "'"$LINUX_ARM64_SHA"'"@'}' "$FORMULA_FILE"
+          [ -n "$LINUX_AMD64_SHA" ] && sed -i '/roost-linux-amd64\.tar\.gz/{n;s@sha256 ".*"@sha256 "'"$LINUX_AMD64_SHA"'"@'}' "$FORMULA_FILE"
+
+          echo "Updated Formula:"
+          cat "$FORMULA_FILE"
+
+      - name: Commit and push Formula
+        run: |
+          cd homebrew-roost
+          git config user.name "phpgao"
+          git config user.email "endoffight@gmail.com"
+          git add Formula/roost.rb
+          git commit -m "Update roost to ${{ needs.release.outputs.version }}" || echo "No changes to commit"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
