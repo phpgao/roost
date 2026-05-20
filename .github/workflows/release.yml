@@ -117,49 +117,48 @@ jobs:
 
           FORMULA_FILE=homebrew-roost/Formula/roost.rb
 
-          # Regenerate Formula from scratch using Python (robust, no sed complexity)
-          python3 -c "
-          v = '$V'
-          da = '$DARWIN_ARM64_SHA'
-          dx = '$DARWIN_AMD64_SHA'
-          la = '$LINUX_ARM64_SHA'
-          lx = '$LINUX_AMD64_SHA'
-          lines = []
-          lines.append('class Roost < Formula>')
-          lines.append('  desc \"Interactive AI Session manager TUI for Claude, Gemini, Codex, Copilot, OpenCode\"')
-          lines.append('  homepage \"https://github.com/phpgao/roost\"')
-          lines.append('  version \"' + v + '\"')
-          lines.append('')
-          lines.append('  if OS.mac?')
-          lines.append('    if Hardware::CPU.arm?')
-          lines.append('      url \"https://github.com/phpgao/roost/releases/download/v#{version}/roost-darwin-arm64.tar.gz\"')
-          lines.append('      sha256 \"' + da + '\"')
-          lines.append('    else')
-          lines.append('      url \"https://github.com/phpgao/roost/releases/download/v#{version}/roost-darwin-amd64.tar.gz\"')
-          lines.append('      sha256 \"' + dx + '\"')
-          lines.append('    end')
-          lines.append('  elsif OS.linux?')
-          lines.append('    if Hardware::CPU.arm?')
-          lines.append('      url \"https://github.com/phpgao/roost/releases/download/v#{version}/roost-linux-arm64.tar.gz\"')
-          lines.append('      sha256 \"' + la + '\"')
-          lines.append('    else')
-          lines.append('      url \"https://github.com/phpgao/roost/releases/download/v#{version}/roost-linux-amd64.tar.gz\"')
-          lines.append('      sha256 \"' + lx + '\"')
-          lines.append('    end')
-          lines.append('  end')
-          lines.append('')
-          lines.append('  def install')
-          lines.append('    bin.install \"roost\"')
-          lines.append('  end')
-          lines.append('')
-          lines.append('  test do')
-          lines.append('    assert_match \"roost\", shell_output(\"#{bin}/roost --help 2>&1\", 1)')
-          lines.append('  end')
-          lines.append('end')
-          content = chr(10).join(lines) + chr(10)
-          with open('$FORMULA_FILE', 'w') as f:
-              f.write(content)
-          "
+          # Regenerate Formula from scratch using heredoc (avoids all quoting issues)
+          cat > "$FORMULA_FILE" <<'RBF'
+          class Roost < Formula>
+            desc "Interactive AI Session manager TUI for Claude, Gemini, Codex, Copilot, OpenCode"
+            homepage "https://github.com/phpgao/roost"
+            version "RBF_VERSION"
+
+            if OS.mac?
+              if Hardware::CPU.arm?
+                url "https://github.com/phpgao/roost/releases/download/v#{version}/roost-darwin-arm64.tar.gz"
+                sha256 "RBF_DARWIN_ARM64"
+              else
+                url "https://github.com/phpgao/roost/releases/download/v#{version}/roost-darwin-amd64.tar.gz"
+                sha256 "RBF_DARWIN_AMD64"
+              end
+            elsif OS.linux?
+              if Hardware::CPU.arm?
+                url "https://github.com/phpgao/roost/releases/download/v#{version}/roost-linux-arm64.tar.gz"
+                sha256 "RBF_LINUX_ARM64"
+              else
+                url "https://github.com/phpgao/roost/releases/download/v#{version}/roost-linux-amd64.tar.gz"
+                sha256 "RBF_LINUX_AMD64"
+              end
+            end
+
+            def install
+              bin.install "roost"
+            end
+
+            test do
+              assert_match "roost", shell_output("#{bin}/roost --help 2>&1", 1)
+            end
+          end
+          RBF
+
+          # Substitute placeholders
+          sed -i "s/RBF_VERSION/${V}/g" "$FORMULA_FILE"
+          sed -i "s/RBF_DARWIN_ARM64/${DARWIN_ARM64_SHA}/g" "$FORMULA_FILE"
+          sed -i "s/RBF_DARWIN_AMD64/${DARWIN_AMD64_SHA}/g" "$FORMULA_FILE"
+          sed -i "s/RBF_LINUX_ARM64/${LINUX_ARM64_SHA}/g" "$FORMULA_FILE"
+          sed -i "s/RBF_LINUX_AMD64/${LINUX_AMD64_SHA}/g" "$FORMULA_FILE"
+
           echo "Updated Formula:"
           cat "$FORMULA_FILE"
 
