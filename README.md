@@ -6,11 +6,26 @@ Manage AI coding sessions from Claude, Gemini, Codex, Copilot, and OpenCode in o
 
 ## Install
 
+### Homebrew (macOS / Linux)
+
+```bash
+brew install phpgao/roost/roost
+```
+
+Or tap first, then install:
+
+```bash
+brew tap phpgao/roost
+brew install roost
+```
+
+### Go install
+
 ```bash
 go install github.com/phpgao/roost@latest
 ```
 
-Or build from source:
+### Build from source
 
 ```bash
 git clone https://github.com/phpgao/roost

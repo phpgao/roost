@@ -6,11 +6,26 @@
 
 ## 安装
 
+### Homebrew（macOS / Linux）
+
+```bash
+brew install phpgao/roost/roost
+```
+
+或先 tap 再安装：
+
+```bash
+brew tap phpgao/roost
+brew install roost
+```
+
+### go install
+
 ```bash
 go install github.com/phpgao/roost@latest
 ```
 
-或本地构建：
+### 本地构建
 
 ```bash
 git clone https://github.com/phpgao/roost
