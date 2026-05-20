@@ -104,28 +104,62 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract checksums and update Formula
+      - name: Update Formula
         run: |
           VERSION="${{ needs.release.outputs.version }}"
+          V="${VERSION#v}"
           CHECKSUMS_FILE=/tmp/checksums.txt
 
-          DARWIN_AMD64_SHA=$(grep "roost-darwin-amd64.tar.gz" $CHECKSUMS_FILE | awk '{print $1}')
           DARWIN_ARM64_SHA=$(grep "roost-darwin-arm64.tar.gz" $CHECKSUMS_FILE | awk '{print $1}')
-          LINUX_AMD64_SHA=$(grep "roost-linux-amd64.tar.gz" $CHECKSUMS_FILE | awk '{print $1}')
+          DARWIN_AMD64_SHA=$(grep "roost-darwin-amd64.tar.gz" $CHECKSUMS_FILE | awk '{print $1}')
           LINUX_ARM64_SHA=$(grep "roost-linux-arm64.tar.gz" $CHECKSUMS_FILE | awk '{print $1}')
+          LINUX_AMD64_SHA=$(grep "roost-linux-amd64.tar.gz" $CHECKSUMS_FILE | awk '{print $1}')
 
           FORMULA_FILE=homebrew-roost/Formula/roost.rb
 
-          # Update version (strip 'v' prefix)
-          V="${VERSION#v}"
-          sed -i 's@version ".*"@version "'"$V"'"@' "$FORMULA_FILE"
-
-          # Update sha256: match url line, then substitute on the NEXT line
-          [ -n "$DARWIN_ARM64_SHA" ] && sed -i '/roost-darwin-arm64\.tar\.gz/{n;s@sha256 ".*"@sha256 "'"$DARWIN_ARM64_SHA"'"@'}' "$FORMULA_FILE"
-          [ -n "$DARWIN_AMD64_SHA" ] && sed -i '/roost-darwin-amd64\.tar\.gz/{n;s@sha256 ".*"@sha256 "'"$DARWIN_AMD64_SHA"'"@'}' "$FORMULA_FILE"
-          [ -n "$LINUX_ARM64_SHA" ] && sed -i '/roost-linux-arm64\.tar\.gz/{n;s@sha256 ".*"@sha256 "'"$LINUX_ARM64_SHA"'"@'}' "$FORMULA_FILE"
-          [ -n "$LINUX_AMD64_SHA" ] && sed -i '/roost-linux-amd64\.tar\.gz/{n;s@sha256 ".*"@sha256 "'"$LINUX_AMD64_SHA"'"@'}' "$FORMULA_FILE"
-
+          # Regenerate Formula from scratch using Python (robust, no sed complexity)
+          python3 -c "
+          v = '$V'
+          da = '$DARWIN_ARM64_SHA'
+          dx = '$DARWIN_AMD64_SHA'
+          la = '$LINUX_ARM64_SHA'
+          lx = '$LINUX_AMD64_SHA'
+          lines = []
+          lines.append('class Roost < Formula>')
+          lines.append('  desc \"Interactive AI Session manager TUI for Claude, Gemini, Codex, Copilot, OpenCode\"')
+          lines.append('  homepage \"https://github.com/phpgao/roost\"')
+          lines.append('  version \"' + v + '\"')
+          lines.append('')
+          lines.append('  if OS.mac?')
+          lines.append('    if Hardware::CPU.arm?')
+          lines.append('      url \"https://github.com/phpgao/roost/releases/download/v#{version}/roost-darwin-arm64.tar.gz\"')
+          lines.append('      sha256 \"' + da + '\"')
+          lines.append('    else')
+          lines.append('      url \"https://github.com/phpgao/roost/releases/download/v#{version}/roost-darwin-amd64.tar.gz\"')
+          lines.append('      sha256 \"' + dx + '\"')
+          lines.append('    end')
+          lines.append('  elsif OS.linux?')
+          lines.append('    if Hardware::CPU.arm?')
+          lines.append('      url \"https://github.com/phpgao/roost/releases/download/v#{version}/roost-linux-arm64.tar.gz\"')
+          lines.append('      sha256 \"' + la + '\"')
+          lines.append('    else')
+          lines.append('      url \"https://github.com/phpgao/roost/releases/download/v#{version}/roost-linux-amd64.tar.gz\"')
+          lines.append('      sha256 \"' + lx + '\"')
+          lines.append('    end')
+          lines.append('  end')
+          lines.append('')
+          lines.append('  def install')
+          lines.append('    bin.install \"roost\"')
+          lines.append('  end')
+          lines.append('')
+          lines.append('  test do')
+          lines.append('    assert_match \"roost\", shell_output(\"#{bin}/roost --help 2>&1\", 1)')
+          lines.append('  end')
+          lines.append('end')
+          content = chr(10).join(lines) + chr(10)
+          with open('$FORMULA_FILE', 'w') as f:
+              f.write(content)
+          "
           echo "Updated Formula:"
           cat "$FORMULA_FILE"
 
