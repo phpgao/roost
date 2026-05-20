@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +9,7 @@ import (
 	"syscall"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/spf13/pflag"
 )
 
 // 版本信息，由 Makefile 的 LDFLAGS 注入
@@ -27,11 +27,19 @@ func isCommandAvailable(bin string) bool {
 
 func main() {
 	// command-line flags
-	listFlag := flag.Bool("list", false, "list all projects and sessions")
-	resumeFlag := flag.String("resume", "", "resume the specified session ID")
-	deleteFlag := flag.String("delete", "", "delete the specified session ID")
-	jsonFlag := flag.Bool("json", false, "output in JSON format (use with --list)")
-	flag.Parse()
+	listFlag := pflag.BoolP("list", "l", false, "list all projects and sessions")
+	resumeFlag := pflag.StringP("resume", "r", "", "resume the specified session ID")
+	deleteFlag := pflag.StringP("delete", "d", "", "delete the specified session ID")
+	jsonFlag := pflag.BoolP("json", "j", false, "output in JSON format (use with --list)")
+	versionFlag := pflag.BoolP("version", "v", false, "print version information")
+	pflag.Parse()
+
+	if *versionFlag {
+		fmt.Printf("roost version %s\n", Version)
+		fmt.Printf("  build time: %s\n", BuildTime)
+		fmt.Printf("  git commit: %s\n", GitCommit)
+		return
+	}
 
 	cfg := LoadConfig()
 

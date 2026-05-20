@@ -119,7 +119,7 @@ jobs:
 
           # Regenerate Formula from scratch using heredoc (avoids all quoting issues)
           cat > "$FORMULA_FILE" <<'RBF'
-          class Roost < Formula>
+          class Roost < Formula
             desc "Interactive AI Session manager TUI for Claude, Gemini, Codex, Copilot, OpenCode"
             homepage "https://github.com/phpgao/roost"
             version "RBF_VERSION"

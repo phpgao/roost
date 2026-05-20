@@ -13,7 +13,7 @@ VERSION := $(shell git describe --always --tags --dirty=-dirty 2>/dev/null || ec
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
-LDFLAGS := -ldflags "-X '$(MODULE_NAME)/Version=$(VERSION)' -X '$(MODULE_NAME)/BuildTime=$(BUILD_TIME)' -X '$(MODULE_NAME)/GitCommit=$(GIT_COMMIT)'" -trimpath
+LDFLAGS := -ldflags "-X 'main.Version=$(VERSION)' -X 'main.BuildTime=$(BUILD_TIME)' -X 'main.GitCommit=$(GIT_COMMIT)'" -trimpath
 
 # 输出目录
 OUTPUT_DIR := bin
