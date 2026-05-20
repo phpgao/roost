@@ -539,10 +539,13 @@ func TestUpdate_SpinnerTickMsg_NotLoading(t *testing.T) {
 func TestUpdate_AgentExitMsg_WithError(t *testing.T) {
 	m := makeModelWithProjects()
 	testErr := fmt.Errorf("agent crashed")
-	nm, _ := m.Update(agentExitMsg{err: testErr})
+	nm, _ := m.Update(agentExitMsg{err: testErr, output: "stack trace"})
 	mm := nm.(*Model)
 	if mm.err == nil || mm.err.Error() != "agent crashed" {
 		t.Errorf("agentExitMsg with error: err = %v, want 'agent crashed'", mm.err)
+	}
+	if mm.errOutput != "stack trace" {
+		t.Errorf("agentExitMsg with error: errOutput = %q, want %q", mm.errOutput, "stack trace")
 	}
 	if !mm.loading {
 		t.Error("agentExitMsg: should set loading=true")
@@ -591,10 +594,48 @@ func TestView_Error(t *testing.T) {
 	m := makeModelWithProjects()
 	m.loading = false
 	m.err = fmt.Errorf("something broke")
+	m.errOutput = "stderr line 1\nstderr line 2"
 	v := m.View()
 	if !strings.Contains(v.Content, "error:") {
 		t.Error("View with err: should contain 'error:'")
 	}
+	if !strings.Contains(v.Content, "stderr line 1") {
+		t.Error("View with err: should contain stderr output")
+	}
+	if !strings.Contains(v.Content, "press Esc to continue") {
+		t.Error("View with err: should contain continue hint")
+	}
+}
+
+func TestHandleKey_ErrorScreen(t *testing.T) {
+	m := makeModelWithProjects()
+	m.err = fmt.Errorf("boom")
+	m.errOutput = "details"
+	m.screen = screenNewAgent
+
+	nm, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	mm := nm.(*Model)
+	if cmd != nil {
+		t.Error("Esc on error screen should not quit")
+	}
+	if mm.err != nil {
+		t.Error("Esc on error screen should clear err")
+	}
+	if mm.errOutput != "" {
+		t.Error("Esc on error screen should clear errOutput")
+	}
+	if mm.screen != screenNewAgent {
+		t.Errorf("Esc on error screen should keep current screen, got %v", mm.screen)
+	}
+
+	m.err = fmt.Errorf("boom")
+	m.errOutput = "details"
+	nm, cmd = m.Update(tea.KeyPressMsg{Code: 'q'})
+	mm = nm.(*Model)
+	if cmd == nil {
+		t.Error("q on error screen should quit")
+	}
+	_ = mm
 }
 
 // =====================================================================

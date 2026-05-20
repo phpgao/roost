@@ -22,9 +22,22 @@ func TestNewClaudeScanner(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		s := &ClaudeScanner{dataDir: dir}
-		s.loadKnownPaths()
+		cfg := Config{
+			Platforms: PlatformConfigs{
+				Claude: PlatformConfig{
+					Bin:     "claude",
+					DataDir: dir, // absolute path, filepath.Join will use it directly
+				},
+			},
+		}
+		s := NewClaudeScanner(cfg)
 
+		if s.bin != "claude" {
+			t.Errorf("bin = %q, want %q", s.bin, "claude")
+		}
+		if s.dataDir != dir {
+			t.Errorf("dataDir = %q, want %q", s.dataDir, dir)
+		}
 		if len(s.knownPaths) != 3 {
 			t.Errorf("expected 3 known paths, got %d", len(s.knownPaths))
 		}
@@ -48,8 +61,15 @@ func TestNewClaudeScanner(t *testing.T) {
 
 	t.Run("handles missing config file gracefully", func(t *testing.T) {
 		dir := t.TempDir()
-		s := &ClaudeScanner{dataDir: dir}
-		s.loadKnownPaths()
+		cfg := Config{
+			Platforms: PlatformConfigs{
+				Claude: PlatformConfig{
+					Bin:     "claude",
+					DataDir: dir,
+				},
+			},
+		}
+		s := NewClaudeScanner(cfg)
 
 		if len(s.knownPaths) != 0 {
 			t.Errorf("expected 0 known paths, got %d", len(s.knownPaths))
@@ -63,11 +83,37 @@ func TestNewClaudeScanner(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		s := &ClaudeScanner{dataDir: dir}
-		s.loadKnownPaths()
+		cfg := Config{
+			Platforms: PlatformConfigs{
+				Claude: PlatformConfig{
+					Bin:     "claude",
+					DataDir: dir,
+				},
+			},
+		}
+		s := NewClaudeScanner(cfg)
 
 		if len(s.knownPaths) != 0 {
 			t.Errorf("expected 0 known paths, got %d", len(s.knownPaths))
+		}
+	})
+
+	t.Run("expands relative data dir from home", func(t *testing.T) {
+		cfg := Config{
+			Platforms: PlatformConfigs{
+				Claude: PlatformConfig{
+					Bin:     "claude",
+					DataDir: ".claude",
+				},
+			},
+		}
+
+		s := NewClaudeScanner(cfg)
+
+		home, _ := os.UserHomeDir()
+		expectedDataDir := filepath.Join(home, ".claude")
+		if s.dataDir != expectedDataDir {
+			t.Errorf("dataDir = %q, want %q", s.dataDir, expectedDataDir)
 		}
 	})
 }
@@ -89,9 +135,22 @@ func TestNewCodeBuddyScanner(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		s := &CodeBuddyScanner{dataDir: dir}
-		s.loadTrustedDirs()
+		cfg := Config{
+			Platforms: PlatformConfigs{
+				CodeBuddy: PlatformConfig{
+					Bin:     "codebuddy",
+					DataDir: dir,
+				},
+			},
+		}
+		s := NewCodeBuddyScanner(cfg)
 
+		if s.bin != "codebuddy" {
+			t.Errorf("bin = %q, want %q", s.bin, "codebuddy")
+		}
+		if s.dataDir != dir {
+			t.Errorf("dataDir = %q, want %q", s.dataDir, dir)
+		}
 		if len(s.trustedDirs) != 3 {
 			t.Errorf("expected 3 trusted dirs (wildcard filtered), got %d", len(s.trustedDirs))
 		}
@@ -115,8 +174,15 @@ func TestNewCodeBuddyScanner(t *testing.T) {
 
 	t.Run("handles missing settings file gracefully", func(t *testing.T) {
 		dir := t.TempDir()
-		s := &CodeBuddyScanner{dataDir: dir}
-		s.loadTrustedDirs()
+		cfg := Config{
+			Platforms: PlatformConfigs{
+				CodeBuddy: PlatformConfig{
+					Bin:     "codebuddy",
+					DataDir: dir,
+				},
+			},
+		}
+		s := NewCodeBuddyScanner(cfg)
 
 		if len(s.trustedDirs) != 0 {
 			t.Errorf("expected 0 trusted dirs, got %d", len(s.trustedDirs))
@@ -130,11 +196,37 @@ func TestNewCodeBuddyScanner(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		s := &CodeBuddyScanner{dataDir: dir}
-		s.loadTrustedDirs()
+		cfg := Config{
+			Platforms: PlatformConfigs{
+				CodeBuddy: PlatformConfig{
+					Bin:     "codebuddy",
+					DataDir: dir,
+				},
+			},
+		}
+		s := NewCodeBuddyScanner(cfg)
 
 		if len(s.trustedDirs) != 0 {
 			t.Errorf("expected 0 trusted dirs, got %d", len(s.trustedDirs))
+		}
+	})
+
+	t.Run("expands relative data dir from home", func(t *testing.T) {
+		cfg := Config{
+			Platforms: PlatformConfigs{
+				CodeBuddy: PlatformConfig{
+					Bin:     "codebuddy",
+					DataDir: ".codebuddy",
+				},
+			},
+		}
+
+		s := NewCodeBuddyScanner(cfg)
+
+		home, _ := os.UserHomeDir()
+		expectedDataDir := filepath.Join(home, ".codebuddy")
+		if s.dataDir != expectedDataDir {
+			t.Errorf("dataDir = %q, want %q", s.dataDir, expectedDataDir)
 		}
 	})
 }

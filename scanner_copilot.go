@@ -31,8 +31,11 @@ type copilotWorkspace struct {
 }
 
 func NewCopilotScanner(cfg Config) *CopilotScanner {
-	home, _ := os.UserHomeDir()
-	dataDir := filepath.Join(home, cfg.DataDirFor(PlatformCopilot))
+	dataDir := cfg.DataDirFor(PlatformCopilot)
+	if !filepath.IsAbs(dataDir) {
+		home, _ := os.UserHomeDir()
+		dataDir = filepath.Join(home, dataDir)
+	}
 	return &CopilotScanner{
 		dataDir: dataDir,
 		bin:     cfg.BinFor(PlatformCopilot),

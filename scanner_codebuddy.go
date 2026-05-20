@@ -22,8 +22,11 @@ type cbSettings struct {
 }
 
 func NewCodeBuddyScanner(cfg Config) *CodeBuddyScanner {
-	home, _ := os.UserHomeDir()
-	dataDir := filepath.Join(home, cfg.DataDirFor(PlatformCodeBuddy))
+	dataDir := cfg.DataDirFor(PlatformCodeBuddy)
+	if !filepath.IsAbs(dataDir) {
+		home, _ := os.UserHomeDir()
+		dataDir = filepath.Join(home, dataDir)
+	}
 	s := &CodeBuddyScanner{
 		dataDir: dataDir,
 		bin:     cfg.BinFor(PlatformCodeBuddy),

@@ -15,9 +15,13 @@ type GeminiScanner struct {
 }
 
 func NewGeminiScanner(cfg Config) *GeminiScanner {
-	home, _ := os.UserHomeDir()
+	dataDir := cfg.DataDirFor(PlatformGemini)
+	if !filepath.IsAbs(dataDir) {
+		home, _ := os.UserHomeDir()
+		dataDir = filepath.Join(home, dataDir)
+	}
 	return &GeminiScanner{
-		dataDir: filepath.Join(home, cfg.DataDirFor(PlatformGemini)),
+		dataDir: dataDir,
 		bin:     cfg.BinFor(PlatformGemini),
 	}
 }

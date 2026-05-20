@@ -717,7 +717,7 @@ func TestClamp(t *testing.T) {
 
 func TestAgentExitMsg(t *testing.T) {
 	m := newModel(nil)
-	msg := agentExitMsg{err: nil}
+	msg := agentExitMsg{err: nil, output: ""}
 	nm, _ := m.Update(msg)
 	_ = nm.(*Model)
 	// should not panic

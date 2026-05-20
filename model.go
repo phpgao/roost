@@ -13,7 +13,8 @@ import (
 
 // agentExitMsg agent 子进程退出后发送的消息（suspend 模式）
 type agentExitMsg struct {
-	err error
+	err    error
+	output string
 }
 
 // scanDoneMsg 扫描完成消息
@@ -58,8 +59,9 @@ type Model struct {
 	delSession *Session
 	delProject *Project
 
-	loading bool
-	err     error
+	loading   bool
+	err       error
+	errOutput string
 
 	width  int
 	height int
@@ -156,6 +158,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case deleteDoneMsg:
 		if msg.err != nil {
 			m.err = msg.err
+			m.errOutput = ""
 		}
 		m.loading = true
 		m.screen = screenProject
@@ -169,6 +172,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// suspend 模式：agent 退出后回到 TUI，刷新 session 列表
 		if msg.err != nil {
 			m.err = msg.err
+			m.errOutput = msg.output
+		} else {
+			m.err = nil
+			m.errOutput = ""
 		}
 		m.loading = true
 		return m, tea.Batch(m.scanCmd(), spinnerTick())
@@ -190,6 +197,19 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// 非 esc 按键时清掉退出提示
 	if msg.String() != keyEsc {
 		m.escHint = false
+	}
+	// 错误页优先处理，避免继续按原 screen 路由导致按键失效。
+	if m.err != nil {
+		switch msg.String() {
+		case "q", keyCtrlC:
+			return m, tea.Quit
+		case keyEsc, keyEnter:
+			m.err = nil
+			m.errOutput = ""
+			return m, nil
+		default:
+			return m, nil
+		}
 	}
 	// 帮助页拦截：任意键关闭
 	if m.showHelp {
@@ -605,7 +625,11 @@ func (m *Model) View() tea.View {
 			styleSeparator.Render(strings.Repeat("─", m.width)) + "\n\n" +
 			fmt.Sprintf("  %s %s", styleSubtle.Render(frame), styleIndicator.Render("scanning sessions…"))
 	} else if m.err != nil {
-		s = fmt.Sprintf("  error: %v\n\n  press q to quit", m.err)
+		s = fmt.Sprintf("  error: %v", m.err)
+		if m.errOutput != "" {
+			s += "\n\n" + indentBlock(m.errOutput, "  ")
+		}
+		s += "\n\n  press Esc to continue, q to quit"
 	} else if m.showHelp {
 		s = renderHelpView(m)
 	} else {
@@ -731,6 +755,13 @@ func clamp(v, lo, hi int) int {
 	return v
 }
 
+func indentBlock(s, prefix string) string {
+	if s == "" {
+		return ""
+	}
+	return prefix + strings.ReplaceAll(s, "\n", "\n"+prefix)
+}
+
 func wrapSuspendCommand(p Platform, argv []string) []string {
 	if len(argv) == 0 {
 		return nil
@@ -770,6 +801,15 @@ func shellQuote(arg string) string {
 	return arg
 }
 
+func execInteractiveProcess(cmd *exec.Cmd) tea.Cmd {
+	// Interactive agent CLIs must inherit the real TTY. If Stdout/Stderr are
+	// wrapped with a generic io.Writer, exec.Cmd falls back to pipes and the
+	// child process will fail terminal checks like "stdout is not a terminal".
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return agentExitMsg{err: err}
+	})
+}
+
 // suspendResume 使用 tea.Exec 启动 agent 子进程，退出后回到 TUI
 func (m *Model) suspendResume(session *Session) tea.Cmd {
 	var scanner Scanner
@@ -795,9 +835,7 @@ func (m *Model) suspendResume(session *Session) tea.Cmd {
 	cmd := exec.CommandContext(context.Background(), argv[0], argv[1:]...)
 	cmd.Dir = session.ProjectPath
 
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return agentExitMsg{err: err}
-	})
+	return execInteractiveProcess(cmd)
 }
 
 // handleNewAgentKey 处理 agent 选择页的按键
@@ -837,11 +875,10 @@ func (m *Model) launchNewSession(p Platform) tea.Cmd {
 	}
 
 	if m.cfg.GetResumeMode() == ResumeModeSuspend {
+		argv = wrapSuspendCommand(p, argv)
 		cmd := exec.CommandContext(context.Background(), argv[0], argv[1:]...)
 		cmd.Dir = m.selectedProject.FullPath
-		return tea.ExecProcess(cmd, func(err error) tea.Msg {
-			return agentExitMsg{err: err}
-		})
+		return execInteractiveProcess(cmd)
 	}
 
 	// replace 模式：通知 main 退出后启动新 session

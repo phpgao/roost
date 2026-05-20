@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -178,6 +179,74 @@ func TestClaudeScanProjectsNotExist(t *testing.T) {
 	}
 	if len(projects) != 0 {
 		t.Errorf("expected 0 projects, got %d", len(projects))
+	}
+}
+
+func TestClaudeScanProjectsSkipsInvalidEntries(t *testing.T) {
+	dir := t.TempDir()
+	projectsDir := filepath.Join(dir, "projects")
+	if err := os.MkdirAll(projectsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(projectsDir, "README.txt"), []byte("ignore me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	emptyProjDir := filepath.Join(projectsDir, "-home-user-empty")
+	if err := os.MkdirAll(emptyProjDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(emptyProjDir, "notes.txt"), []byte("skip non-jsonl"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(emptyProjDir, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	validProjDir := filepath.Join(projectsDir, "-home-user-valid")
+	if err := os.MkdirAll(validProjDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `{"type":"user","uuid":"u1","timestamp":"2026-05-15T10:00:00Z","message":{"role":"user","content":"hello"}}
+{"type":"assistant","uuid":"u2","timestamp":"2026-05-15T10:00:01Z","message":{"role":"assistant","model":"sonnet","content":"hi"}}
+`
+	if err := os.WriteFile(filepath.Join(validProjDir, "sess1.jsonl"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &ClaudeScanner{dataDir: dir}
+	projects, err := s.ScanProjects()
+	if err != nil {
+		t.Fatalf("ScanProjects error: %v", err)
+	}
+	if len(projects) != 1 {
+		t.Fatalf("expected 1 valid project, got %d", len(projects))
+	}
+	if projects[0].FullPath != "/home/user/valid" {
+		t.Errorf("FullPath = %q, want %q", projects[0].FullPath, "/home/user/valid")
+	}
+}
+
+func TestClaudeExtractClaudeText(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  json.RawMessage
+		want string
+	}{
+		{name: "nil", raw: nil, want: ""},
+		{name: "string", raw: json.RawMessage(`"plain text"`), want: "plain text"},
+		{name: "blocks", raw: json.RawMessage(`[{"type":"text","text":"from block"}]`), want: "from block"},
+		{name: "blocks skip empty", raw: json.RawMessage(`[{"type":"text","text":""},{"type":"text","text":"next"}]`), want: "next"},
+		{name: "invalid", raw: json.RawMessage(`{"unexpected":true}`), want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractClaudeText(tt.raw); got != tt.want {
+				t.Errorf("extractClaudeText() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

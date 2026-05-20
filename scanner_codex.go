@@ -16,9 +16,13 @@ type CodexScanner struct {
 }
 
 func NewCodexScanner(cfg Config) *CodexScanner {
-	home, _ := os.UserHomeDir()
+	dataDir := cfg.DataDirFor(PlatformCodex)
+	if !filepath.IsAbs(dataDir) {
+		home, _ := os.UserHomeDir()
+		dataDir = filepath.Join(home, dataDir)
+	}
 	return &CodexScanner{
-		dataDir: filepath.Join(home, cfg.DataDirFor(PlatformCodex)),
+		dataDir: dataDir,
 		bin:     cfg.BinFor(PlatformCodex),
 	}
 }

@@ -22,8 +22,11 @@ type claudeConfig struct {
 }
 
 func NewClaudeScanner(cfg Config) *ClaudeScanner {
-	home, _ := os.UserHomeDir()
-	dataDir := filepath.Join(home, cfg.DataDirFor(PlatformClaude))
+	dataDir := cfg.DataDirFor(PlatformClaude)
+	if !filepath.IsAbs(dataDir) {
+		home, _ := os.UserHomeDir()
+		dataDir = filepath.Join(home, dataDir)
+	}
 	s := &ClaudeScanner{dataDir: dataDir, bin: cfg.BinFor(PlatformClaude)}
 	s.loadKnownPaths()
 	return s

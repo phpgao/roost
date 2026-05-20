@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -287,5 +288,27 @@ func TestParseOpenCodeModel(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("parseOpenCodeModel(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestGetOpenCodeDBPath_NotFound(t *testing.T) {
+	result := getOpenCodeDBPath("nonexistent-binary-12345")
+	if result != "" {
+		t.Errorf("expected empty string for non-existent binary, got %q", result)
+	}
+}
+
+func TestGetOpenCodeDBPath_CommandFails(t *testing.T) {
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "fake-opencode")
+	// script exits with non-zero
+	scriptContent := "#!/bin/sh\nexit 1\n"
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result := getOpenCodeDBPath(scriptPath)
+	if result != "" {
+		t.Errorf("expected empty string for failing command, got %q", result)
 	}
 }
